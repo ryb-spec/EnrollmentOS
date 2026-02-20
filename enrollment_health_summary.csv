@@ -1,0 +1,29 @@
+Metric,Value
+Total Records,121
+Missing Assigned Staff,115
+Missing Next Step,74
+Missing Status,72
+Stale Threshold (days),14
+Excluded Stages,Not a Good Fit
+
+Status,Count
+(No Status),72
+Application sent to fill out,13
+Working on gathering references,9
+References sent to principals,7
+No Longer Interested,6
+tried to contact,4
+Not a Good Fit,3
+Application on pause,2
+Intake Sent,2
+Visit approved,1
+Potential Visit,1
+Not Contacted yet,1
+
+Assigned Staff,Count
+RYB,6
+MCF,1
+DMF,1
+RCF,1
+LN,1
+MIB,1
