@@ -4,10 +4,9 @@ import streamlit as st
 import config
 import extractors
 import notion_io
+import google_forms
 
 ENROLLMENT_GOAL = 102
-# Adjust to match your actual "enrolled" statuses.
-ENROLLED_STATUSES = {"Enrolled", "Accepted", "Active"}
 FILES_PROPERTY_NAME = "Files & media"
 
 
@@ -16,14 +15,13 @@ def load_pages():
     return notion_io.fetch_all_pages_from_databases(notion, config.DATABASES)
 
 
-def pages_to_df(pages):
+def pages_to_df(pages, form_indexes):
     rows = []
     for page in pages:
         props = page.get("properties", {})
         name = extractors.get_title(props)
-        status = extractors.get_stage_value(props, config.PROP_STAGE)
-        if not status:
-            status = f"(No {config.PROP_STAGE})"
+        raw_status = extractors.get_stage_value(props, config.PROP_STAGE)
+        status = extractors.normalize_status(raw_status, page.get("_source", "(unknown)"), config)
 
         owners = extractors.get_multiselect_names(props, config.PROP_ASSIGNED)
         assigned = extractors.owners_str(owners)
@@ -38,6 +36,13 @@ def pages_to_df(pages):
             and status not in config.EXCLUDE_STALE_STAGES
         )
 
+        form_summary = google_forms.get_student_form_summary(form_indexes, props, name, config)
+        staff_rubric_score = extractors.get_number(props, config.PROP_STAFF_RUBRIC_SCORE)
+        staff_rubric_status = extractors.get_select_like_value(props, config.PROP_STAFF_RUBRIC_STATUS) or ""
+        parent_submission = form_summary["matches"]["parent"]
+        reference_1_submission = form_summary["matches"]["reference_1"]
+        reference_2_submission = form_summary["matches"]["reference_2"]
+
         rows.append(
             {
                 "Name": name,
@@ -48,6 +53,19 @@ def pages_to_df(pages):
                 "Last Edited": pd.to_datetime(last_edited) if last_edited else pd.NaT,
                 "Notion URL": page.get("url", ""),
                 "Source": page.get("_source", "(unknown)"),
+                "Parent Form Submitted": parent_submission["submitted"],
+                "Parent Form Timestamp": parent_submission["timestamp"],
+                "Reference 1 Submitted": reference_1_submission["submitted"],
+                "Reference 1 Timestamp": reference_1_submission["timestamp"],
+                "Reference 2 Submitted": reference_2_submission["submitted"],
+                "Reference 2 Timestamp": reference_2_submission["timestamp"],
+                "All Forms Submitted": form_summary["all_forms_submitted"],
+                "Packet Score": form_summary["rubric_score"],
+                "Packet Max": form_summary["rubric_max"],
+                "Packet %": form_summary["rubric_percent"],
+                "BHH Rubric Score": staff_rubric_score,
+                "BHH Rubric Status": staff_rubric_status,
+                "Needs BHH Rubric": form_summary["all_forms_submitted"] and staff_rubric_score is None,
                 "_files": extract_files_links(props, FILES_PROPERTY_NAME),
                 "_is_stale": is_stale,
             }
@@ -253,7 +271,15 @@ def main():
     st.markdown('<div class="cc-subtle">Live Notion view with enrollment progress and hygiene signals.</div>', unsafe_allow_html=True)
 
     pages = load_pages()
-    df = pages_to_df(pages)
+    form_indexes = google_forms.load_google_form_indexes(config)
+
+    form_errors = [
+        f"{k}: {v.get('error')}" for k, v in form_indexes["forms"].items() if v.get("error")
+    ]
+    if form_errors:
+        st.warning("Google Forms source warning (using fallback or no data): " + " | ".join(form_errors))
+
+    df = pages_to_df(pages, form_indexes)
 
     if "selected_status" not in st.session_state:
         st.session_state.selected_status = "All"
@@ -271,9 +297,11 @@ def main():
     total_count = len(base_df)
     missing_assigned = (base_df["Assigned Staff"] == "(unassigned)").sum()
     missing_next_step = (base_df["Next Step"] == "").sum()
+    missing_form_packet = (~base_df["All Forms Submitted"]).sum()
+    needs_bhh_rubric = base_df["Needs BHH Rubric"].sum()
     stale_count = base_df["_is_stale"].sum()
 
-    current_enrolled = base_df["Status"].isin(ENROLLED_STATUSES).sum()
+    current_enrolled = base_df["Status"].isin(config.ENROLLED_STATUSES).sum()
     percent_complete = 0 if ENROLLMENT_GOAL == 0 else current_enrolled / ENROLLMENT_GOAL
     remaining = max(ENROLLMENT_GOAL - current_enrolled, 0)
 
@@ -305,6 +333,8 @@ def main():
             {"label": f"Missing {config.PROP_ASSIGNED}", "value": missing_assigned},
             {"label": f"Missing {config.PROP_NEXT_STEP}", "value": missing_next_step},
             {"label": f"Stale >= {config.STALE_DAYS} days", "value": stale_count},
+            {"label": "Incomplete Form Packet", "value": missing_form_packet},
+            {"label": "Ready for BHH Rubric", "value": needs_bhh_rubric},
         ]
     )
 
@@ -314,10 +344,12 @@ def main():
 
     st.caption(f"Selected {config.PROP_STAGE}: {st.session_state.selected_status}")
 
-    filter_cols = st.columns(3)
+    filter_cols = st.columns(5)
     stale_only = filter_cols[0].checkbox("Stale only", value=False)
     unassigned_only = filter_cols[1].checkbox("Unassigned only", value=False)
     missing_next_step_only = filter_cols[2].checkbox("Missing Next Step only", value=False)
+    incomplete_packet_only = filter_cols[3].checkbox("Incomplete forms only", value=False)
+    needs_rubric_only = filter_cols[4].checkbox("Needs BHH rubric", value=False)
 
     filtered = base_df.copy()
     if st.session_state.selected_status != "All":
@@ -328,6 +360,10 @@ def main():
         filtered = filtered[filtered["Assigned Staff"] == "(unassigned)"]
     if missing_next_step_only:
         filtered = filtered[filtered["Next Step"] == ""]
+    if incomplete_packet_only:
+        filtered = filtered[~filtered["All Forms Submitted"]]
+    if needs_rubric_only:
+        filtered = filtered[filtered["Needs BHH Rubric"]]
 
     table_cols = [
         "Name",
@@ -337,6 +373,18 @@ def main():
         "Next Step",
         "Days Since Edit",
         "Last Edited",
+        "All Forms Submitted",
+        "Packet Score",
+        "Packet Max",
+        "Packet %",
+        "BHH Rubric Score",
+        "BHH Rubric Status",
+        "Parent Form Submitted",
+        "Parent Form Timestamp",
+        "Reference 1 Submitted",
+        "Reference 1 Timestamp",
+        "Reference 2 Submitted",
+        "Reference 2 Timestamp",
         "Notion URL",
     ]
     display_df = filtered[table_cols + ["_files"]].sort_values(
@@ -364,6 +412,23 @@ def main():
         with st.expander(title, expanded=False):
             st.markdown(f"**Assigned Staff:** {row['Assigned Staff']}")
             st.markdown(f"**Last Edited:** {row['Last Edited']}")
+            st.markdown(f"**Form Packet Score:** {int(row['Packet Score'])}/{int(row['Packet Max'])} ({row['Packet %']:.0%})")
+            if pd.notna(row["BHH Rubric Score"]):
+                st.markdown(f"**BHH Rubric Score:** {row['BHH Rubric Score']}")
+            else:
+                st.markdown("**BHH Rubric Score:** Not entered yet")
+            if row["BHH Rubric Status"]:
+                st.markdown(f"**BHH Rubric Status:** {row['BHH Rubric Status']}")
+            st.markdown("**Parent Form:** " + ("✅ Submitted" if row["Parent Form Submitted"] else "❌ Missing"))
+            if row["Parent Form Timestamp"]:
+                st.markdown(f"- Parent timestamp: {row['Parent Form Timestamp']}")
+            st.markdown("**Reference 1:** " + ("✅ Submitted" if row["Reference 1 Submitted"] else "❌ Missing"))
+            if row["Reference 1 Timestamp"]:
+                st.markdown(f"- Ref 1 timestamp: {row['Reference 1 Timestamp']}")
+            st.markdown("**Reference 2:** " + ("✅ Submitted" if row["Reference 2 Submitted"] else "❌ Missing"))
+            if row["Reference 2 Timestamp"]:
+                st.markdown(f"- Ref 2 timestamp: {row['Reference 2 Timestamp']}")
+
             st.markdown("**Notion Page:**")
             st.link_button("Open in Notion", row["Notion URL"])
 
