@@ -7,6 +7,7 @@ from extractors import (
     get_rich_text,
     get_stage_value,
     get_title,
+    normalize_status,
     owners_str,
 )
 
@@ -31,9 +32,9 @@ def analyze_pages(pages, config):
         url = page.get("url", "")
         source = page.get("_source", "(unknown)")
 
-        stage = get_stage_value(props, config.PROP_STAGE)
-        if not stage:
-            stage = f"(No {config.PROP_STAGE})"
+        raw_stage = get_stage_value(props, config.PROP_STAGE)
+        stage = normalize_status(raw_stage, source, config)
+        if not raw_stage:
             missing_stage.append(name)
 
         stage_counts[stage] += 1
@@ -107,7 +108,7 @@ def analyze_pages(pages, config):
             })
 
         # --- MISSING STAGE ---
-        if stage == f"(No {config.PROP_STAGE})":
+        if not raw_stage:
             if owners:
                 for o in owners:
                     owner_actions[o]["missing_stage"].append({"name": name, "stage": stage, "url": url})

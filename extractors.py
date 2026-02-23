@@ -40,6 +40,27 @@ def get_multiselect_names(props, prop_name):
     return []
 
 
+def get_number(props, prop_name):
+    p = props.get(prop_name)
+    if not p or p.get("type") != "number":
+        return None
+    return p.get("number")
+
+
+def get_select_like_value(props, prop_name):
+    p = props.get(prop_name)
+    if not p:
+        return None
+
+    t = p.get("type")
+    if t == "select":
+        return p["select"]["name"] if p.get("select") else None
+    if t == "status":
+        return p["status"]["name"] if p.get("status") else None
+
+    return None
+
+
 def get_stage_value(props, prop_name):
     """
     Notion databases can have a property literally named "Status" whose type is:
@@ -63,3 +84,13 @@ def get_stage_value(props, prop_name):
 
 def owners_str(owners):
     return ", ".join(owners) if owners else "(unassigned)"
+
+
+def normalize_status(raw_status, source, config):
+    if raw_status:
+        normalized = config.STATUS_NORMALIZATION.get(source, {}).get(raw_status)
+        if normalized:
+            return normalized
+        return raw_status
+
+    return config.STATUS_DEFAULTS_BY_SOURCE.get(source, f"(No {config.PROP_STAGE})")
