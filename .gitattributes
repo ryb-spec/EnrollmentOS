@@ -1,2 +1,9 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+cd "/c/Users/ybassman/Documents/EnrollmentOS"
+ls
+*.ps1 filter=ps1cd "/c/Users/ybassman/Documents/EnrollmentOS"
+lspip install streamlit
+streamlit run staff_survey.py
+# or
+streamlit run dashboard.py
+
+            
