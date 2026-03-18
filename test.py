@@ -83,7 +83,6 @@ def get_multiselect_names(props, prop_name):
 
 for page in pages:
     props = page.get("properties", {})
-    print("Assigned Staff raw:", props.get("Assigned Staff"))
 
     name = get_title(props)
 
