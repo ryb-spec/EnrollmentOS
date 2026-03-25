@@ -46,23 +46,68 @@ def save_assessment_to_notion(prospect_name: str, assessment_data: dict, config)
             }
         
         page_id = matching_page["id"]
+        page_properties = matching_page.get("properties", {})
+        props_lc_map = {k.lower(): k for k in page_properties.keys()}
         assessor = assessment_data.get("assigned_staff_lead", "Staff")
         today = datetime.now().strftime("%Y-%m-%d")
+
+        def _resolve_property(config_attr: str, aliases=None):
+            aliases = aliases or []
+            configured_name = getattr(config, config_attr, None)
+            candidates = [configured_name] if configured_name else []
+            candidates.extend(aliases)
+
+            for candidate in candidates:
+                if candidate and candidate in page_properties:
+                    return candidate
+            for candidate in candidates:
+                if candidate and candidate.lower() in props_lc_map:
+                    return props_lc_map[candidate.lower()]
+            return None
+
+        updated_fields = []
+
+        def _safe_update(update_fn, field_label: str):
+            try:
+                update_fn()
+                updated_fields.append(field_label)
+            except Exception:
+                pass
+
+        prop_assessment_status = _resolve_property("PROP_ASSESSMENT_STATUS", ["Assessment Status", "Status"])
+        prop_assessment_date = _resolve_property("PROP_ASSESSMENT_DATE", ["Assessment Date", "Assessment Date "])
+        prop_assessor_name = _resolve_property("PROP_ASSESSOR_NAME", ["Assessor Name"])
+        prop_assessment_grade = _resolve_property("PROP_ASSESSMENT_GRADE", ["Assessment Grade", "Assessment  Grade"])
+        prop_assessment_average = _resolve_property("PROP_ASSESSMENT_AVERAGE_SCORE", ["Assessment Average Score", "Average Score"])
+        prop_assessment_summary = _resolve_property("PROP_ASSESSMENT_SUMMARY_COMMENTS", ["Assessment Summary Comments", "Summary Comments"])
+        prop_assessment_next_actions = _resolve_property("PROP_ASSESSMENT_NEXT_ACTIONS", ["Assessment Next Actions", "Next Action", "Next Actions"])
+        prop_assessment_action_owner = _resolve_property("PROP_ASSESSMENT_ACTION_OWNER", ["Assessment Action Owner", "Action Owner"])
+        prop_assessment_target_date = _resolve_property("PROP_ASSESSMENT_TARGET_DATE", ["Assessment Target Date", "Target Date"])
+        prop_assessment_payload_json = _resolve_property("PROP_ASSESSMENT_PAYLOAD_JSON", ["Assessment Payload JSON", "Assessment JSON", "Assessment Details"])
         
         # Update Assessment Status to Completed
-        if hasattr(config, "PROP_ASSESSMENT_STATUS"):
-            notion_io.update_page_select(notion, page_id, config.PROP_ASSESSMENT_STATUS, "Completed")
+        if prop_assessment_status:
+            _safe_update(
+                lambda: notion_io.update_page_select(notion, page_id, prop_assessment_status, "Completed"),
+                prop_assessment_status,
+            )
         
         # Update Assessment Date
-        if hasattr(config, "PROP_ASSESSMENT_DATE"):
-            notion_io.update_page_date(notion, page_id, config.PROP_ASSESSMENT_DATE, today)
+        if prop_assessment_date:
+            _safe_update(
+                lambda: notion_io.update_page_date(notion, page_id, prop_assessment_date, today),
+                prop_assessment_date,
+            )
         
         # Update Assessor Name
-        if hasattr(config, "PROP_ASSESSOR_NAME"):
-            notion_io.update_page_rich_text(notion, page_id, config.PROP_ASSESSOR_NAME, assessor)
+        if prop_assessor_name:
+            _safe_update(
+                lambda: notion_io.update_page_rich_text(notion, page_id, prop_assessor_name, assessor),
+                prop_assessor_name,
+            )
         
         # Update Assessment Grade (1-5 select)
-        if hasattr(config, "PROP_ASSESSMENT_GRADE"):
+        if prop_assessment_grade:
             grade_value = str(assessment_data.get("overall_rating", ""))
             if grade_value and grade_value != "0":
                 # Map rating to grade display
@@ -74,7 +119,71 @@ def save_assessment_to_notion(prospect_name: str, assessment_data: dict, config)
                     "1": "1 - Poor Fit",
                 }
                 grade_display = grade_map.get(grade_value, grade_value)
-                notion_io.update_page_select(notion, page_id, config.PROP_ASSESSMENT_GRADE, grade_display)
+                _safe_update(
+                    lambda: notion_io.update_page_select(notion, page_id, prop_assessment_grade, grade_display),
+                    prop_assessment_grade,
+                )
+
+        if prop_assessment_average:
+            avg_score = assessment_data.get("average_score")
+            if isinstance(avg_score, (int, float)):
+                _safe_update(
+                    lambda: notion_io.update_page_number(notion, page_id, prop_assessment_average, float(avg_score)),
+                    prop_assessment_average,
+                )
+
+        if prop_assessment_summary:
+            summary_comments = assessment_data.get("summary_comments", "")
+            if summary_comments:
+                _safe_update(
+                    lambda: notion_io.update_page_rich_text(notion, page_id, prop_assessment_summary, summary_comments),
+                    prop_assessment_summary,
+                )
+
+        if prop_assessment_action_owner:
+            action_owner = assessment_data.get("action_owner", "")
+            if action_owner:
+                _safe_update(
+                    lambda: notion_io.update_page_rich_text(notion, page_id, prop_assessment_action_owner, action_owner),
+                    prop_assessment_action_owner,
+                )
+
+        if prop_assessment_target_date:
+            target_date = assessment_data.get("target_date", "")
+            if target_date:
+                _safe_update(
+                    lambda: notion_io.update_page_date(notion, page_id, prop_assessment_target_date, target_date),
+                    prop_assessment_target_date,
+                )
+
+        if prop_assessment_next_actions:
+            next_actions = assessment_data.get("next_actions", []) or []
+            if next_actions:
+                next_actions_prop = page_properties.get(prop_assessment_next_actions, {})
+                if next_actions_prop.get("type") == "multi_select":
+                    _safe_update(
+                        lambda: notion_io.update_page_property(
+                            notion,
+                            page_id,
+                            prop_assessment_next_actions,
+                            {"multi_select": [{"name": str(action)} for action in next_actions]},
+                        ),
+                        prop_assessment_next_actions,
+                    )
+                else:
+                    _safe_update(
+                        lambda: notion_io.update_page_rich_text(notion, page_id, prop_assessment_next_actions, ", ".join(str(action) for action in next_actions)),
+                        prop_assessment_next_actions,
+                    )
+
+        if prop_assessment_payload_json:
+            payload_json = json.dumps(assessment_data, indent=2)
+            chunks = [payload_json[i:i + 1900] for i in range(0, len(payload_json), 1900)]
+            rich_text_payload = {"rich_text": [{"type": "text", "text": {"content": chunk}} for chunk in chunks[:8]]}
+            _safe_update(
+                lambda: notion_io.update_page_property(notion, page_id, prop_assessment_payload_json, rich_text_payload),
+                prop_assessment_payload_json,
+            )
         
         # Clear reminder tracking for this prospect (assessment completed)
         if getattr(config, "EMAIL_ENABLED", False):
@@ -83,7 +192,7 @@ def save_assessment_to_notion(prospect_name: str, assessment_data: dict, config)
         return {
             "success": True,
             "page_id": page_id,
-            "message": f"Assessment saved for {prospect_name}"
+            "message": f"Assessment saved for {prospect_name}" + (f" (updated: {', '.join(updated_fields)})" if updated_fields else "")
         }
     
     except Exception as e:

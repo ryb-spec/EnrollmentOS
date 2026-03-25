@@ -6,21 +6,119 @@ import json
 from statistics import mean
 import streamlit as st
 
+NEIROS_DESCRIPTORS = {
+    "hashkafah": {
+        5: "Clearly Chassidish; high standards",
+        4: "Chassidish; aligned with expectations",
+        3: "Generally observant; some concerns",
+        2: "Weak Chassidish alignment",
+        1: "Not Chassidishly aligned",
+    },
+    "social_functioning": {
+        5: "Strong social skills; positive peer relationships",
+        4: "Generally socially appropriate",
+        3: "Noticeable social challenges",
+        2: "Significant social difficulties",
+        1: "Severe social impairment",
+    },
+    "emotional_stability": {
+        5: "Emotionally stable; resilient",
+        4: "Mostly stable; minor managed concerns",
+        3: "Some concerns; support may be needed",
+        2: "Ongoing emotional challenges",
+        1: "Beyond school capacity",
+    },
+    "academic_readiness": {
+        5: "Handles standard coursework well",
+        4: "Generally capable; minor gaps",
+        3: "Academic gaps requiring support",
+        2: "Significant academic concerns",
+        1: "Cannot meet expectations",
+    },
+    "financial_participation": {
+        5: "Full or near-full participation secured",
+        4: "Solid participation; minor gap",
+        3: "Partial participation",
+        2: "Limited ability to participate",
+        1: "No realistic participation",
+    },
+}
 
-def scale_input(label: str, key: str, help_text: str = "", initial_value=None):
+LEGACY_DESCRIPTORS = {
+    "jewish_growth_orientation": {
+        5: "Actively seeks Jewish growth; mission-aligned",
+        4: "Positive and receptive",
+        3: "Mixed or inconsistent openness",
+        2: "Limited interest or hesitation",
+        1: "Resistant or dismissive",
+    },
+    "emotional_stability": {
+        5: "Stable and resilient",
+        4: "Generally stable; minor challenges",
+        3: "Some concerns; support likely needed",
+        2: "Ongoing difficulties",
+        1: "Beyond BHH capacity",
+    },
+    "social_integration": {
+        5: "Integrates easily; healthy peer relationships",
+        4: "Generally appropriate socially",
+        3: "Noticeable social difficulties",
+        2: "Significant struggles",
+        1: "Severe social impairment",
+    },
+    "academic_readiness": {
+        5: "At or above grade level",
+        4: "On level with minor gaps",
+        3: "Gaps requiring support",
+        2: "Significant gaps; fit unclear",
+        1: "Beyond BHH capacity",
+    },
+    "behavior_structure_acceptance": {
+        5: "Respectful; self-regulated",
+        4: "Generally appropriate; occasional redirection",
+        3: "Inconsistent; needs monitoring",
+        2: "Frequent issues",
+        1: "Serious behavioral concerns",
+    },
+    "financial_participation": {
+        5: "Full tuition or above",
+        4: "Near-full participation",
+        3: "Partial participation",
+        2: "Limited ability",
+        1: "No realistic participation",
+    },
+}
+
+
+def scale_input(label: str, key: str, help_text: str = "", initial_value=None, descriptors=None):
     """
     Radio input for 1-5 scale assessment.
     Returns 1-5 integer or None when not selected.
     """
-    options = ["— (not selected)", 5, 4, 3, 2, 1]
+    options = [None, 5, 4, 3, 2, 1]
     default_index = 0
     
     # If we have a saved value, find its index
     if initial_value and initial_value in options:
         default_index = options.index(initial_value)
     
-    val = st.radio(label, options, index=default_index, key=key, help=help_text, horizontal=True)
-    return None if val == "— (not selected)" else int(val)
+    def _format_option(option):
+        if option is None:
+            return "— (not selected)"
+        if descriptors and option in descriptors:
+            return f"{option} — {descriptors[option]}"
+        return str(option)
+
+    val = st.radio(
+        label,
+        options,
+        index=default_index,
+        key=key,
+        help=help_text,
+        horizontal=True,
+        format_func=_format_option,
+    )
+    return None if val is None else int(val)
 
 
 def avg_or_none(values):
@@ -120,6 +218,7 @@ def render_neiros_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["hashkafah"] = scale_input(
             "Hashkafah",
             f"{key_prefix}_neiros_hashkafah",
+            descriptors=NEIROS_DESCRIPTORS["hashkafah"],
             initial_value=initial_data.get("scores", {}).get("neiros", {}).get("hashkafah")
         )
         notes["hashkafah"] = st.text_area(
@@ -131,6 +230,7 @@ def render_neiros_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["social_functioning"] = scale_input(
             "Social Functioning",
             f"{key_prefix}_neiros_social",
+            descriptors=NEIROS_DESCRIPTORS["social_functioning"],
             initial_value=initial_data.get("scores", {}).get("neiros", {}).get("social_functioning")
         )
         notes["social_functioning"] = st.text_area(
@@ -142,6 +242,7 @@ def render_neiros_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["emotional_stability"] = scale_input(
             "Emotional Stability",
             f"{key_prefix}_neiros_emotional",
+            descriptors=NEIROS_DESCRIPTORS["emotional_stability"],
             initial_value=initial_data.get("scores", {}).get("neiros", {}).get("emotional_stability")
         )
         notes["emotional_stability"] = st.text_area(
@@ -154,6 +255,7 @@ def render_neiros_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["academic_readiness"] = scale_input(
             "Academic Readiness",
             f"{key_prefix}_neiros_academic",
+            descriptors=NEIROS_DESCRIPTORS["academic_readiness"],
             initial_value=initial_data.get("scores", {}).get("neiros", {}).get("academic_readiness")
         )
         notes["academic_readiness"] = st.text_area(
@@ -165,6 +267,7 @@ def render_neiros_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["financial_participation"] = scale_input(
             "Financial Participation",
             f"{key_prefix}_neiros_financial",
+            descriptors=NEIROS_DESCRIPTORS["financial_participation"],
             initial_value=initial_data.get("scores", {}).get("neiros", {}).get("financial_participation")
         )
         notes["financial_participation"] = st.text_area(
@@ -180,7 +283,7 @@ def render_neiros_rubric(key_prefix: str = "", initial_data: dict = None):
     }
 
 
-def render_legacy_rubric(key_prefix: str = "", initial_data: dict = None):
+def render_legacy_rubric(key_prefix: str = "", initial_data: dict = None, heading: str = "### Legacy Division (Boys & Girls – General Track)"):
     """
     Render Legacy Division rubric (6 criteria).
     Returns list of scores and dict of notes.
@@ -191,7 +294,7 @@ def render_legacy_rubric(key_prefix: str = "", initial_data: dict = None):
     scores = {}
     notes = {}
     
-    st.markdown("### Legacy Division (Boys & Girls – General Track)")
+    st.markdown(heading)
     
     c1, c2 = st.columns(2)
     
@@ -199,6 +302,7 @@ def render_legacy_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["jewish_growth_orientation"] = scale_input(
             "Jewish Growth Orientation",
             f"{key_prefix}_legacy_jewish_growth",
+            descriptors=LEGACY_DESCRIPTORS["jewish_growth_orientation"],
             initial_value=initial_data.get("scores", {}).get("legacy", {}).get("jewish_growth_orientation")
         )
         notes["jewish_growth_orientation"] = st.text_area(
@@ -210,6 +314,7 @@ def render_legacy_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["emotional_stability"] = scale_input(
             "Emotional Stability",
             f"{key_prefix}_legacy_emotional",
+            descriptors=LEGACY_DESCRIPTORS["emotional_stability"],
             initial_value=initial_data.get("scores", {}).get("legacy", {}).get("emotional_stability")
         )
         notes["emotional_stability"] = st.text_area(
@@ -221,6 +326,7 @@ def render_legacy_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["social_integration"] = scale_input(
             "Social Integration",
             f"{key_prefix}_legacy_social",
+            descriptors=LEGACY_DESCRIPTORS["social_integration"],
             initial_value=initial_data.get("scores", {}).get("legacy", {}).get("social_integration")
         )
         notes["social_integration"] = st.text_area(
@@ -233,6 +339,7 @@ def render_legacy_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["academic_readiness"] = scale_input(
             "Academic Readiness",
             f"{key_prefix}_legacy_academic",
+            descriptors=LEGACY_DESCRIPTORS["academic_readiness"],
             initial_value=initial_data.get("scores", {}).get("legacy", {}).get("academic_readiness")
         )
         notes["academic_readiness"] = st.text_area(
@@ -244,6 +351,7 @@ def render_legacy_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["behavior_structure_acceptance"] = scale_input(
             "Behavior / Structure Acceptance",
             f"{key_prefix}_legacy_behavior",
+            descriptors=LEGACY_DESCRIPTORS["behavior_structure_acceptance"],
             initial_value=initial_data.get("scores", {}).get("legacy", {}).get("behavior_structure_acceptance")
         )
         notes["behavior_structure_acceptance"] = st.text_area(
@@ -255,6 +363,7 @@ def render_legacy_rubric(key_prefix: str = "", initial_data: dict = None):
         scores["financial_participation"] = scale_input(
             "Financial Participation",
             f"{key_prefix}_legacy_financial",
+            descriptors=LEGACY_DESCRIPTORS["financial_participation"],
             initial_value=initial_data.get("scores", {}).get("legacy", {}).get("financial_participation")
         )
         notes["financial_participation"] = st.text_area(
@@ -424,7 +533,7 @@ def build_assessment_payload(applicant_data: dict, rubric_data: dict, disqualifi
     if division == "Neiros Division":
         scores = rubric_data.get("scores", {})
         notes_dict = rubric_data.get("notes", {})
-    elif division == "Legacy Division":
+    elif division in {"Legacy Division", "Boys Division"}:
         scores = rubric_data.get("scores", {})
         notes_dict = rubric_data.get("notes", {})
     else:
@@ -443,7 +552,7 @@ def build_assessment_payload(applicant_data: dict, rubric_data: dict, disqualifi
         "assigned_staff_lead": applicant_data.get("assigned_staff_lead"),
         "scores": {
             "neiros": scores if division == "Neiros Division" else {},
-            "legacy": scores if division == "Legacy Division" else {},
+            "legacy": scores if division in {"Legacy Division", "Boys Division"} else {},
             "notes": notes_dict,
         },
         "automatic_disqualifiers": disqualifiers,

@@ -139,6 +139,12 @@ PROP_ASSESSMENT_DATE = "Assessment Date"
 PROP_ASSESSOR_NAME = "Assessor Name"
 PROP_ASSESSMENT_GRADE = "Assessment Grade"
 PROP_ASSESSOR_EMAIL = "Assessor Email"
+PROP_ASSESSMENT_AVERAGE_SCORE = "Assessment Average Score"
+PROP_ASSESSMENT_SUMMARY_COMMENTS = "Assessment Summary Comments"
+PROP_ASSESSMENT_NEXT_ACTIONS = "Assessment Next Actions"
+PROP_ASSESSMENT_ACTION_OWNER = "Assessment Action Owner"
+PROP_ASSESSMENT_TARGET_DATE = "Assessment Target Date"
+PROP_ASSESSMENT_PAYLOAD_JSON = "Assessment Payload JSON"
 
 # -------- EMAIL REMINDER CONFIGURATION --------
 # Gmail SMTP setup (using app password for 2FA accounts)
