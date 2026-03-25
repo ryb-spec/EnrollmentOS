@@ -77,6 +77,18 @@ REENROLLMENT_WEIGHTS = {
     "Not Returning": 0.00,
 }
 
+# Stage-specific conversion rates to enrollment
+STAGE_CONVERSION_RATES = {
+    "Lead": 0.20,                          # 20% of leads become enrolled
+    "Stage 1 - Intake": 0.50,              # 50% conversion
+    "Stage 2 - Principal Review": 0.65,    # 65% conversion
+    "Stage 3 - Application": 0.85,         # 85% conversion
+    "Stage 4 - Interview": 0.85,           # 85% conversion
+    "Stage 5 - Decision": 1.00,            # 100% (already enrolled)
+}
+
+ENROLLMENT_GOAL = 102
+
 
 # ============================================================================
 # STYLING
@@ -279,7 +291,14 @@ def calculate_days_since_activity(row) -> int:
             return None
         try:
             dt = pd.to_datetime(val, errors="coerce")
-            return dt if pd.notna(dt) else None
+            if pd.notna(dt):
+                # Strip timezone info to make timezone-naive
+                if hasattr(dt, 'tz_localize'):
+                    dt = dt.tz_localize(None)
+                elif dt.tzinfo is not None:
+                    dt = dt.replace(tzinfo=None)
+                return dt
+            return None
         except:
             return None
     
@@ -296,7 +315,9 @@ def calculate_days_since_activity(row) -> int:
     else:
         return None
     
-    days = (pd.Timestamp.now() - last).days
+    # Use timezone-naive now() for comparison
+    now = pd.Timestamp.now().tz_localize(None) if pd.Timestamp.now().tzinfo else pd.Timestamp.now()
+    days = (now - last).days
     return days
 
 
@@ -535,8 +556,101 @@ def render_action_view(df: pd.DataFrame, source_label: str):
     stuck_overdue = df[df["Is Stuck Or Overdue"]].copy()
     enrolled = df[df["Pipeline Stage"] == "Stage 5 - Decision"]
     
+    # Calculate projected enrollment based on conversion rates
+    projected_total = 0
+    for stage, conversion_rate in STAGE_CONVERSION_RATES.items():
+        students_in_stage = len(df[df["Pipeline Stage"] == stage])
+        projected_from_stage = students_in_stage * conversion_rate
+        projected_total += projected_from_stage
+    
+    # Show enrollment goal and progress
+    st.markdown("### 🎯 Enrollment Goal Progress")
+    enrollment_goal = ENROLLMENT_GOAL
+    enrolled_count = len(enrolled)
+    progress_pct = (enrolled_count / enrollment_goal * 100)
+    projected_pct = (projected_total / enrollment_goal * 100)
+    
+    goal_col1, goal_col2, goal_col3, goal_col4 = st.columns(4)
+    with goal_col1:
+        st.metric("Enrolled (Actual)", f"{enrolled_count}", f"Goal: {enrollment_goal}")
+    with goal_col2:
+        st.metric("Projected Enrollment", f"{projected_total:.1f}", 
+                 f"{projected_pct:.0f}% of goal")
+    with goal_col3:
+        st.metric("Enrollment Gap", f"{enrollment_goal - enrolled_count}", 
+                 f"{progress_pct:.0f}% actual")
+    with goal_col4:
+        st.metric("Additional Needed", max(0, round(enrollment_goal - projected_total)), 
+                 f"from current pipeline")
+    
+    # Show actual vs projected progress bars
+    st.markdown("**Actual Enrollment Progress**")
+    st.progress(min(progress_pct / 100, 1.0))
+    
+    st.markdown("**Projected Enrollment Progress** (with conversion rates)")
+    st.progress(min(projected_pct / 100, 1.0))
+    
+    st.divider()
+    
+    # Show the 5 enrollment stages
+    st.markdown("### 📍 The 5 Enrollment Stages")
+    
+    stages = {
+        "Lead": {
+            "description": "Initial contact made",
+            "status_list": ["New Lead", "Contacted"],
+            "color": "🔵"
+        },
+        "Stage 1 - Intake": {
+            "description": "Application packet & references gathering",
+            "status_list": ["Intake Sent", "Gathering References"],
+            "color": "🟡"
+        },
+        "Stage 2 - Principal Review": {
+            "description": "Principal assessment (max 14 days)",
+            "status_list": ["Under Principal Review"],
+            "color": "🟠"
+        },
+        "Stage 3 - Application": {
+            "description": "Application submission & completion",
+            "status_list": ["Application Sent", "Application Started"],
+            "color": "🟣"
+        },
+        "Stage 4 - Interview": {
+            "description": "Interview scheduling & completion",
+            "status_list": ["Application Completed", "Scheduling Interview"],
+            "color": "🔴"
+        },
+        "Stage 5 - Decision": {
+            "description": "Enrollment complete ✅",
+            "status_list": ["Accepted", "Enrolled"],
+            "color": "🟢"
+        },
+    }
+    
+    # Show stage breakdown
+    stage_cols = st.columns(6)
+    for idx, (stage_name, stage_info) in enumerate(stages.items()):
+        if idx < 6:
+            with stage_cols[idx]:
+                # Count students in this stage
+                stage_count = len(df[df["Pipeline Stage"] == stage_name])
+                st.markdown(f"""
+                <div style="background:#f0f2f6;padding:12px;border-radius:8px;text-align:center;">
+                    <div style="font-size:1.5em;margin-bottom:4px;">{stage_info['color']}</div>
+                    <div style="font-weight:700;font-size:0.9em;">{stage_name}</div>
+                    <div style="font-size:0.75em;color:#666;margin:4px 0;">{stage_info['description']}</div>
+                    <div style="font-size:1.5em;font-weight:700;color:#111;">{stage_count}</div>
+                    <div style="font-size:0.7em;color:#999;">students</div>
+                </div>
+                """, unsafe_allow_html=True)
+                # Show conversion rate
+                conversion_rate = STAGE_CONVERSION_RATES.get(stage_name, 0)
+                st.markdown(f"**Conversion:** {conversion_rate*100:.0f}%", help=f"Estimated conversion rate through this stage")
+    st.divider()
+    
     # KPI Cards
-    st.subheader("📈 Key Metrics")
+    st.subheader("📈 Action Metrics")
     kpi_cols = st.columns(4)
     
     with kpi_cols[0]:
